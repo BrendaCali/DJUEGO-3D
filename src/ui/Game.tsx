@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { PointerEvent as RPointerEvent } from 'react';
 import { GameSession } from '../game/session';
-import type { Level, PieceType } from '../game/types';
+import type { ExitConfig, Level, PieceType } from '../game/types';
 import { PIECE_TYPES } from '../game/types';
 import { applyCompletion, pendingReward } from '../rewards/rewardRules';
 import type { CompletionResult, RewardLedger } from '../rewards/rewardRules';
@@ -36,9 +36,17 @@ export interface GameProps {
   race?: { onWin: () => void; step: number };
   /** Partida sin DINO (práctica o desafío comunitario): no hay premio por nivel. */
   free?: { label: string; sub: string; onWin?: (usedSec: number, failed: number) => void };
+  /** Partida controlada por el servidor (duelo o evento): el cronómetro arranca en su inicio común. */
+  online?: {
+    elapsedMs: number;
+    label: string;
+    sub: string;
+    onPhase?: (p: 'building' | 'running') => void;
+    onFinish: (sub: { placements: { x: number; y: number; type: PieceType; rot: number }[]; exit: ExitConfig }) => void;
+  };
 }
 
-export function Game({ level, ledger, completedBefore, dev, reducedMotion, hasNext, onComplete, onExit, onNext, onRetry, onHelp, race, free }: GameProps) {
+export function Game({ level, ledger, completedBefore, dev, reducedMotion, hasNext, onComplete, onExit, onNext, onRetry, onHelp, race, free, online }: GameProps) {
   const [session] = useState(() => new GameSession(level, { claimed: completedBefore, reducedMotion }));
   const snap = useSyncExternalStore(session.subscribe, session.getSnapshot);
   const n = level.size;
@@ -127,6 +135,29 @@ export function Game({ level, ledger, completedBefore, dev, reducedMotion, hasNe
   }, [snap.phase, snap.result, level, onComplete, race, free]);
 
   const now = () => performance.now();
+
+  // Partida en línea: arranca con el tiempo ya transcurrido desde el inicio fijado por el servidor
+  useEffect(() => {
+    if (online) session.begin(performance.now() - online.elapsedMs);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+  const sentPhase = useRef('');
+  useEffect(() => {
+    if (!online) return;
+    const p = snap.phase === 'running' ? 'running' : snap.phase === 'building' || snap.phase === 'failing' ? 'building' : null;
+    if (p && sentPhase.current !== p) {
+      sentPhase.current = p;
+      online.onPhase?.(p);
+    }
+  }, [snap.phase, online]);
+  const sentFinish = useRef(false);
+  useEffect(() => {
+    if (!online || sentFinish.current || (snap.phase !== 'celebrating' && snap.phase !== 'won')) return;
+    sentFinish.current = true;
+    const placements: { x: number; y: number; type: PieceType; rot: number }[] = [];
+    snap.board.forEach((t, i) => t && placements.push({ x: i % level.size, y: Math.floor(i / level.size), type: t.type, rot: t.rot }));
+    online.onFinish({ placements, exit: snap.exit });
+  }, [snap.phase, snap.board, snap.exit, online, level.size]);
 
   const begin = () => {
     play('click');
@@ -227,12 +258,12 @@ export function Game({ level, ledger, completedBefore, dev, reducedMotion, hasNe
           <span className="hud-label">Tiempo</span>
           <span className="hud-value" role="timer">{fmtTime(snap.remainingSec)}</span>
         </div>
-        {!race && free && <div className="hud-chip reward" title="Esta partida no gana ni pierde DINO">
-          <span className="hud-label">{free.label}</span>
-          <span className="hud-value">0 DINO</span>
-          <span className="hud-sub">{free.sub}</span>
+        {!race && (free || online) && <div className="hud-chip reward" title="Esta partida no gana ni pierde DINO">
+          <span className="hud-label">{(free ?? online)!.label}</span>
+          <span className="hud-value">{online ? 'En línea' : '0 DINO'}</span>
+          <span className="hud-sub">{(free ?? online)!.sub}</span>
         </div>}
-        {!race && !free && <div className="hud-chip reward" title="Premio de prueba si completas ahora">
+        {!race && !free && !online && <div className="hud-chip reward" title="Premio de prueba si completas ahora">
           <span className="hud-label">Recompensa potencial</span>
           <span className="hud-value">{claimed ? 'Práctica' : `${potential.toFixed(1)} DINO`}</span>
           <span className="hud-sub">{claimed ? 'ya cobrado · sin premio' : 'DINO de prueba'}</span>
@@ -414,7 +445,7 @@ export function Game({ level, ledger, completedBefore, dev, reducedMotion, hasNe
         </aside>
       </div>
 
-      {(phase === 'won' || phase === 'lost') && (
+      {!online && (phase === 'won' || phase === 'lost') && (
         <div className="overlay result" role="dialog" aria-label="Resultado">
           <div className="card big-card">
             {phase === 'won' && snap.result ? (

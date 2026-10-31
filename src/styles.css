@@ -288,3 +288,50 @@ button, select, input { font-family: inherit; }
 .meter.big { height: 16px; }
 .outcome { margin-bottom: 12px; border: 2px solid #f7973a; }
 @media (max-width: 760px) { .shelter-grid { grid-template-columns: 1fr; } }
+
+/* ---- Servidor, saldos, evento ---- */
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; background: #c0392b; box-shadow: 0 0 0 2px #fff; }
+.dot.online { background: #27ae60; }
+.dot.connecting { background: #f1c40f; }
+.cmd { background: #2b1d12; color: #ffe9b8; padding: 10px 14px; border-radius: 10px; font-size: 15px; overflow: auto; }
+.offline { max-width: 640px; margin: 8px auto; }
+.rules { margin: 6px 0; padding-left: 20px; font-size: 15px; line-height: 1.45; }
+.rules li { margin: 4px 0; }
+.countdown { display: grid; place-items: center; text-align: center; min-height: 60vh; }
+.count-num { font-size: clamp(120px, 28vw, 260px); line-height: 1; font-weight: 800; color: var(--accent-dark); text-shadow: 0 8px 0 #fff, 0 14px 0 rgba(0,0,0,.18); animation: pop 1s ease-out infinite; }
+.reduce-motion .count-num { animation: none; }
+@keyframes pop { 0% { transform: scale(1.25); opacity: .4; } 40% { transform: scale(1); opacity: 1; } }
+.ledger { width: 100%; border-collapse: collapse; font-size: 14px; }
+.ledger th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-soft); }
+.ledger td, .ledger th { padding: 5px 8px; border-bottom: 1px solid rgba(0,0,0,.1); vertical-align: top; }
+.ledger .num { text-align: right; font-weight: 700; white-space: nowrap; }
+.ledger .up { color: #1e8a3a; }
+.ledger .down { color: #c0392b; }
+.devbox { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; padding: 8px; border: 2px dashed #7a4fd0; border-radius: 12px; background: #f1e9ff; }
+.seats li .chip { margin-left: auto; }
+.err { color: #b3261e; font-weight: 600; }
+
+/* ---- Pulido gráfico ---- */
+body { background: radial-gradient(1200px 500px at 85% -10%, rgba(255, 244, 190, .9), transparent 60%), linear-gradient(var(--sky-top), var(--sky-bot) 55%, var(--grass)); background-attachment: fixed; }
+.start-sky { position: absolute; inset: 0; pointer-events: none; background:
+  radial-gradient(60px 22px at 12% 18%, #fff 98%, transparent) , radial-gradient(90px 26px at 20% 15%, #fff 98%, transparent),
+  radial-gradient(70px 22px at 70% 10%, #fff 98%, transparent), radial-gradient(100px 28px at 78% 13%, #fff 98%, transparent);
+  opacity: .85; animation: drift 60s linear infinite alternate; }
+.reduce-motion .start-sky { animation: none; }
+@keyframes drift { from { transform: translateX(-20px); } to { transform: translateX(30px); } }
+.start-card { background: linear-gradient(#fffaf0, #fff0cc); box-shadow: 0 10px 0 rgba(120, 80, 30, .35), 0 24px 40px rgba(60, 40, 10, .25); }
+.card-plain, .standings { background: linear-gradient(#fffaf0, #fff3d6); box-shadow: 0 5px 0 rgba(150, 105, 45, .45), 0 12px 24px rgba(70, 45, 10, .12); }
+.level-card { background: linear-gradient(#fffaf0, #ffecc2); transition: transform .12s, box-shadow .12s; }
+.level-card.open:hover, .level-card.done:hover { transform: translateY(-4px) rotate(-.4deg); box-shadow: 0 10px 0 rgba(150, 105, 45, .4); }
+.stage { background:
+  radial-gradient(circle at 20% 15%, rgba(255,255,255,.14), transparent 40%),
+  repeating-linear-gradient(45deg, rgba(0,0,0,.035) 0 6px, transparent 6px 12px), #6fb255;
+  box-shadow: 0 8px 0 #3f7a35, 0 22px 36px rgba(30, 60, 20, .35), inset 0 0 40px rgba(255, 255, 255, .12); }
+.hero-dino { filter: drop-shadow(0 10px 8px rgba(60, 40, 10, .3)); animation: bob 3s ease-in-out infinite; }
+.hero-dino.small { animation-delay: -1.2s; }
+.reduce-motion .hero-dino { animation: none; }
+@keyframes bob { 50% { transform: translateY(-8px); } }
+.shelter-scene { box-shadow: 0 6px 0 rgba(0, 0, 0, .12); }
+.shelter-scene .s-item { transition: opacity .6s, transform .6s; transform-box: fill-box; }
+.shelter-scene .s-item.off { opacity: .1; filter: grayscale(1); }
+.proto-badge { background: linear-gradient(#fff6c8, #ffe58a); }

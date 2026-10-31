@@ -1,19 +1,27 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { LEVELS, getLevel } from './levels';
 import { Game, fmtTime } from './ui/Game';
-import { RoomScreen } from './ui/Room';
-import { MarketPanel } from './ui/Market';
+import { DuelScreen } from './ui/Duel';
+import { ShelterScreen } from './ui/Shelter';
+import { EventScreen } from './ui/Event';
+import { WalletScreen } from './ui/Wallet';
+import { ProtoBadge, fmtD, useNet } from './ui/common';
 import { DINO_COLORS, DinoArt, Fern, Palm, PieceIcon, PORTAL_STYLES, SymbolBadge, Volcano } from './ui/art';
 import { clearSaved, loadSaved, save } from './platform/storage';
 import type { Saved } from './platform/storage';
 import { play, setSound } from './platform/sound';
+import { emptyLedger } from './rewards/rewardRules';
 import type { CompletionResult } from './rewards/rewardRules';
-import { ShelterScreen } from './ui/Shelter';
-import { SHELTER_CONFIG, challengeLevelId, resolveChallenge } from './shelter/shelterRules';
-import type { ChallengeOutcome } from './shelter/shelterRules';
+import { net } from './net/client';
 
-type Screen = { name: 'start' } | { name: 'levels' } | { name: 'game'; levelId: number; attempt: number }
-  | { name: 'room'; code?: string } | { name: 'shelter' } | { name: 'challenge'; attempt: number };
+type Screen =
+  | { name: 'start' }
+  | { name: 'levels' }
+  | { name: 'game'; levelId: number; attempt: number }
+  | { name: 'duel'; code?: string }
+  | { name: 'shelter' }
+  | { name: 'event' }
+  | { name: 'wallet' };
 
 const useReducedMotionQuery = () => {
   const [v, setV] = useState(() => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
@@ -31,35 +39,32 @@ export default function App() {
   const [saved, setSaved] = useState<Saved>(() => loadSaved());
   const [screen, setScreen] = useState<Screen>(() => {
     const code = new URLSearchParams(location.search).get('room');
-    return code ? { name: 'room', code: code.toUpperCase().slice(0, 5) } : { name: 'start' };
+    return code ? { name: 'duel', code: code.toUpperCase().slice(0, 5) } : { name: 'start' };
   });
   const [helpOpen, setHelpOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [marketOpen, setMarketOpen] = useState(false);
-  const [outcome, setOutcome] = useState<ChallengeOutcome | null>(null);
   const osReduce = useReducedMotionQuery();
   const reduce = saved.prefs.reduceMotion || osReduce;
-  const savedRef = useRef(saved);
-  savedRef.current = saved;
+  const n = useNet();
 
   useEffect(() => {
     save(saved);
     setSound(saved.prefs.sound, saved.prefs.volume);
   }, [saved]);
+  useEffect(() => {
+    net.start(saved.name, saved.prefs.dev);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const prefs = saved.prefs;
   const setPrefs = (p: Partial<Saved['prefs']>) => setSaved((s) => ({ ...s, prefs: { ...s.prefs, ...p } }));
-
   const unlocked = (id: number) => prefs.dev || id === 1 || saved.completed[id - 1] !== undefined;
 
-  const onComplete = useCallback((levelId: number, usedSec: number, r: CompletionResult) => {
+  // La práctica solo guarda progreso y mejores tiempos: no mueve DINO ni el refugio.
+  const onComplete = useCallback((levelId: number, usedSec: number, _r: CompletionResult) => {
     setSaved((s) => ({
       ...s,
-      ledger: r.ledger,
-      completed: {
-        ...s.completed,
-        [levelId]: { bestUsedSec: Math.min(s.completed[levelId]?.bestUsedSec ?? Infinity, usedSec) },
-      },
+      completed: { ...s.completed, [levelId]: { bestUsedSec: Math.min(s.completed[levelId]?.bestUsedSec ?? Infinity, usedSec) } },
     }));
   }, []);
 
@@ -72,99 +77,52 @@ export default function App() {
     setScreen(s);
   };
 
-  const finishChallenge = useCallback((levelTime: number, usedSec: number, failed: number) => {
-    const out = resolveChallenge(savedRef.current.shelter, levelTime, usedSec, failed);
-    if (!out) return;
-    setSaved((s) => ({
-      ...s,
-      shelter: out.state,
-      ledger: { ...s.ledger, balance: Math.round((s.ledger.balance + out.prize) * 100) / 100 },
-    }));
-    setOutcome(out);
-    setScreen({ name: 'shelter' });
-  }, []);
-
-  const baseLevel = screen.name === 'game' ? getLevel(screen.levelId)
-    : screen.name === 'challenge' ? getLevel(challengeLevelId(saved.shelter)) : undefined;
-  // Modo desarrollo: ?time=SEGUNDOS acorta el cronómetro para probar la derrota.
+  const baseLevel = screen.name === 'game' ? getLevel(screen.levelId) : undefined;
+  // Modo desarrollo: ?time=SEGUNDOS acorta el cronómetro de práctica para probar la derrota.
   const level = useMemo(() => {
     if (!baseLevel || !prefs.dev) return baseLevel;
     const t = Number(new URLSearchParams(location.search).get('time'));
     return t > 0 ? { ...baseLevel, timeSec: t } : baseLevel;
   }, [baseLevel, prefs.dev]);
 
+  const w = n.view?.wallet;
   return (
     <div className={`app${reduce ? ' reduce-motion' : ''}`}>
       <div className="topbar">
-        <span className="proto-badge" title="Todo es simulado: no hay billeteras, contratos ni dinero real">
-          Prototipo: recompensas de prueba
-        </span>
+        <ProtoBadge />
         <button className="balance market-chip" onClick={() => go({ name: 'shelter' })} title="Ver el refugio comunitario">
-          🦕 Refugio <strong>{Math.min(saved.shelter.duels, SHELTER_CONFIG.goalDuels)}/{SHELTER_CONFIG.goalDuels}</strong>
+          🦕 Refugio <strong>{n.view ? n.view.shelter.shownRescues : '–'}/{n.config?.goalRescues ?? 100}</strong>
         </button>
-        <button className="balance market-chip" onClick={() => setMarketOpen(true)} title="Ver el gráfico del meme (simulado)">DINO <strong>{saved.market.price.toFixed(3)}</strong> <span className={saved.market.history.length > 1 && saved.market.price >= saved.market.history[saved.market.history.length - 2] ? 'up' : 'down'}>{saved.market.history.length > 1 && saved.market.price >= saved.market.history[saved.market.history.length - 2] ? '▲' : '▼'}</span></button>
-        <span className="balance" aria-label="Saldo de prueba">
-          Saldo: <strong>{saved.ledger.balance.toFixed(1)}</strong> DINO de prueba
-        </span>
-        <button
-          className="btn ghost round"
-          onClick={() => setPrefs({ sound: !prefs.sound })}
-          aria-pressed={prefs.sound}
-          aria-label={prefs.sound ? 'Silenciar sonido' : 'Activar sonido'}
-        >
+        <button className="balance" onClick={() => go({ name: 'wallet' })} aria-label="Mi saldo de prueba" title="Mi saldo">
+          <span className={`dot ${n.status}`} title={n.status === 'online' ? 'Conectado' : 'Sin servidor'} />
+          {w ? <>Saldo: <strong>{fmtD(w.available)}</strong>{w.locked > 0 && <> · bloqueado {fmtD(w.locked)}</>} DINO de prueba</> : 'Saldo: sin servidor'}
+        </button>
+        <button className="btn ghost round" onClick={() => setPrefs({ sound: !prefs.sound })} aria-pressed={prefs.sound} aria-label={prefs.sound ? 'Silenciar sonido' : 'Activar sonido'}>
           {prefs.sound ? '🔊' : '🔇'}
         </button>
         <button className="btn ghost round" onClick={() => setSettingsOpen(true)} aria-label="Ajustes">⚙</button>
       </div>
 
-      {screen.name === 'start' && <StartScreen onPlay={() => go({ name: 'levels' })} onRoom={() => go({ name: 'room' })} onShelter={() => go({ name: 'shelter' })} onHelp={openHelp} />}
-
-      {screen.name === 'shelter' && (
-        <ShelterScreen
-          saved={saved}
-          setSaved={(f) => setSaved(f)}
-          dev={prefs.dev}
-          outcome={outcome}
-          onDismissOutcome={() => setOutcome(null)}
-          onPlayChallenge={() => go({ name: 'challenge', attempt: 0 })}
-          onDuel={() => go({ name: 'room' })}
-          onBack={() => go({ name: 'start' })}
-        />
-      )}
-
-      {screen.name === 'challenge' && level && (
-        <Game
-          key={`c${level.id}-${screen.attempt}`}
-          level={level}
-          ledger={saved.ledger}
-          completedBefore
-          dev={prefs.dev}
-          reducedMotion={reduce}
-          hasNext={false}
-          free={{ label: 'Desafío comunitario', sub: 'sin entrada', onWin: (used, failed) => finishChallenge(level.timeSec, used, failed) }}
-          onComplete={() => undefined}
-          onExit={() => go({ name: 'shelter' })}
-          onNext={() => go({ name: 'shelter' })}
-          onRetry={() => go({ name: 'challenge', attempt: screen.attempt + 1 })}
+      {screen.name === 'start' && (
+        <StartScreen
+          onPlay={() => go({ name: 'levels' })}
+          onDuel={() => go({ name: 'duel' })}
+          onShelter={() => go({ name: 'shelter' })}
+          onEvent={() => go({ name: 'event' })}
+          onWallet={() => go({ name: 'wallet' })}
           onHelp={openHelp}
         />
       )}
 
       {screen.name === 'levels' && (
-        <LevelSelect
-          saved={saved}
-          unlocked={unlocked}
-          dev={prefs.dev}
-          onPick={(id) => go({ name: 'game', levelId: id, attempt: 0 })}
-          onBack={() => go({ name: 'start' })}
-        />
+        <LevelSelect saved={saved} unlocked={unlocked} dev={prefs.dev} onPick={(id) => go({ name: 'game', levelId: id, attempt: 0 })} onBack={() => go({ name: 'start' })} />
       )}
 
       {screen.name === 'game' && level && (
         <Game
           key={`${level.id}-${screen.attempt}`}
           level={level}
-          ledger={saved.ledger}
+          ledger={emptyLedger()}
           completedBefore={saved.completed[level.id] !== undefined}
           free={{ label: 'Práctica gratis', sub: 'no gana ni pierde DINO' }}
           dev={prefs.dev}
@@ -178,23 +136,10 @@ export default function App() {
         />
       )}
 
-      {screen.name === 'room' && (
-        <RoomScreen
-          saved={saved}
-          setSaved={(f) => setSaved(f)}
-          initialCode={screen.code}
-          reducedMotion={reduce}
-          dev={prefs.dev}
-          onHelp={openHelp}
-          onExit={() => go({ name: 'start' })}
-        />
-      )}
-
-      {marketOpen && (
-        <Modal title="Mercado del meme" onClose={() => setMarketOpen(false)}>
-          <MarketPanel saved={saved} />
-        </Modal>
-      )}
+      {screen.name === 'duel' && <DuelScreen initialCode={screen.code} dev={prefs.dev} reducedMotion={reduce} onHelp={openHelp} onBack={() => go({ name: 'start' })} />}
+      {screen.name === 'shelter' && <ShelterScreen dev={prefs.dev} onBack={() => go({ name: 'start' })} onEvent={() => go({ name: 'event' })} />}
+      {screen.name === 'event' && <EventScreen dev={prefs.dev} reducedMotion={reduce} onHelp={openHelp} onBack={() => go({ name: 'start' })} />}
+      {screen.name === 'wallet' && <WalletScreen dev={prefs.dev} onBack={() => go({ name: 'start' })} />}
 
       {helpOpen && <HelpModal onClose={() => { setHelpOpen(false); setPrefs({ seenHelp: true }); }} />}
       {settingsOpen && (
@@ -203,7 +148,7 @@ export default function App() {
           osReduce={osReduce}
           onChange={setPrefs}
           onReset={() => {
-            if (window.confirm('¿Borrar progreso y saldo de prueba?')) {
+            if (window.confirm('¿Borrar el progreso de práctica? (Los saldos viven en el servidor.)')) {
               clearSaved();
               setSaved(loadSaved());
               setScreen({ name: 'start' });
@@ -216,27 +161,32 @@ export default function App() {
   );
 }
 
-function StartScreen({ onPlay, onRoom, onShelter, onHelp }: { onPlay: () => void; onRoom: () => void; onShelter: () => void; onHelp: () => void }) {
+function StartScreen({ onPlay, onDuel, onShelter, onEvent, onWallet, onHelp }: { onPlay: () => void; onDuel: () => void; onShelter: () => void; onEvent: () => void; onWallet: () => void; onHelp: () => void }) {
   return (
     <main className="start">
+      <div className="start-sky" aria-hidden="true" />
       <Volcano style={{ position: 'absolute', right: '4%', top: 40, width: 260 }} />
       <Palm style={{ position: 'absolute', left: '2%', bottom: 0, width: 150 }} />
       <Palm flip style={{ position: 'absolute', right: '3%', bottom: 0, width: 130 }} />
       <Fern style={{ position: 'absolute', left: '16%', bottom: 0, width: 120 }} />
       <div className="start-card">
         <h1>Dino <span>Escape</span></h1>
-        <p className="tagline">Construye el camino, gira las piezas y lleva a los dinos a su refugio antes de que explote el volcán.</p>
+        <p className="tagline">Construye el camino, gira las piezas y lleva a los dinos a su refugio antes de que explote el volcán. Cada duelo ayuda a reconstruir el refugio comunitario.</p>
         <div className="hero" aria-hidden="true">
           <svg viewBox="-60 -60 120 120" width="190" height="190" className="hero-dino"><DinoArt dino="green" mood="happy" /></svg>
           <svg viewBox="-60 -60 120 120" width="150" height="150" className="hero-dino small"><DinoArt dino="orange" facing={-1} /></svg>
         </div>
         <div className="row center">
           <button className="btn primary big" onClick={onPlay} autoFocus>Practicar gratis</button>
-          <button className="btn big" onClick={onRoom}>Duelo con DINO</button>
-          <button className="btn big" onClick={onShelter}>Refugio comunitario</button>
-          <button className="btn big" onClick={onHelp}>Cómo jugar</button>
+          <button className="btn big" onClick={onDuel}>Duelos</button>
+          <button className="btn big" onClick={onShelter}>Refugio</button>
+          <button className="btn big" onClick={onEvent}>Evento comunitario</button>
         </div>
-        <p className="proto">Prototipo: recompensas de prueba · sin billeteras ni dinero real</p>
+        <div className="row center">
+          <button className="btn" onClick={onWallet}>Mi saldo</button>
+          <button className="btn" onClick={onHelp}>Cómo jugar</button>
+        </div>
+        <p className="proto">Prototipo — DINO de prueba · sin billeteras, contratos ni dinero real</p>
       </div>
     </main>
   );
@@ -250,6 +200,7 @@ function LevelSelect({ saved, unlocked, dev, onPick, onBack }: { saved: Saved; u
         <button className="btn ghost" onClick={onBack}>← Inicio</button>
         <h2>Practicar gratis{dev && <span className="dev-tag">DEV: todos abiertos</span>}</h2>
       </div>
+      <p className="muted">Aquí aprendes sin arriesgar nada: la práctica no gana ni pierde DINO y no hace avanzar el refugio. Reintentos ilimitados.</p>
       <div className="levels-grid">
         {cards.map((lv) => {
           const done = saved.completed[lv.id];
@@ -268,7 +219,6 @@ function LevelSelect({ saved, unlocked, dev, onPick, onBack }: { saved: Saved; u
           );
         })}
       </div>
-      <p className="tiny">Aquí aprendes sin arriesgar nada: la práctica no gana ni pierde DINO. Para jugar con DINO de prueba, entra a un duelo.</p>
     </main>
   );
 }
@@ -299,7 +249,7 @@ function HelpModal({ onClose }: { onClose: () => void }) {
         <li>Pulsa <strong>Comenzar nivel</strong>: el cronómetro arranca y puedes construir.</li>
         <li>Elige una pieza de la bandeja, <strong>gírala</strong> (↺ ↻ o teclas Q / R) y pulsa una casilla libre. En escritorio también puedes arrastrarla.</li>
         <li>Une la <strong>salida</strong> con el <strong>refugio</strong>. Dos piezas vecinas se conectan solo si las dos tienen abertura en el borde compartido.</li>
-        <li>Pulsa <strong>¡Corre, Dino!</strong>. Si el camino falla verás dónde, el intento fallido se anota (−10 DINO) y puedes corregir si queda tiempo.</li>
+        <li>Pulsa <strong>¡Corre, Dino!</strong>. Si el camino falla verás dónde y puedes corregir mientras quede tiempo: el error gasta tiempo, no DINO.</li>
         <li>Si el tiempo llega a cero, el tablero se llena de bombas.</li>
       </ol>
       <div className="help-pieces">
@@ -325,12 +275,16 @@ function HelpModal({ onClose }: { onClose: () => void }) {
             <span key={k} className="inline-sym"><SymbolBadge kind={s.symbol} color={s.color} /></span>
           ))}
         </li>
-        <li>Dos dinos ({DINO_COLORS.green.name} y {DINO_COLORS.orange.name}): cada uno a su refugio (hoja o sol). Si dos dinos coinciden en una casilla o se cruzan de frente, chocan. En un puente, por ejes distintos, no. Elige quién sale primero y con qué retraso.</li>
-        <li><strong>Practicar</strong> es gratis: no gana ni pierde DINO.</li>
-        <li><strong>Duelo</strong>: dos jugadores bloquean la misma entrada y resuelven los mismos 9 retos. Gana quien llega más lejos (y antes), y cobra el pozo menos dos comisiones anunciadas.</li>
-        <li><strong>Refugio comunitario</strong>: cada duelo válido le suma una parte de las comisiones. Con 100 rescates se abre un desafío sin entrada cuyos premios salen solo de ese fondo.</li>
+        <li>Dos dinos ({DINO_COLORS.green.name} y {DINO_COLORS.orange.name}): cada uno a su refugio. Si coinciden en una casilla o se cruzan de frente, chocan. En un puente, por ejes distintos, no. Elige quién sale primero y con qué retraso (1–10 s).</li>
       </ul>
-      <p className="tiny">Todo es DINO de prueba: no hay billeteras, transacciones ni dinero real.</p>
+      <h3>Reglas económicas (DINO de prueba)</h3>
+      <ul className="help">
+        <li><strong>Practicar</strong> es gratis: no gana ni pierde DINO.</li>
+        <li><strong>Duelo</strong>: cada jugador aporta 10 DINO, que quedan bloqueados. Gana el primer recorrido correcto (reloj del servidor) y recibe 19; 0,5 va a la operación del proyecto y 0,5 al refugio. El perdedor pierde solo sus 10.</li>
+        <li><strong>Devoluciones sin comisión</strong>: empate (menos de 500 ms), nadie completa, sala sin llenar en 5 min, cancelación antes de empezar o falla del sistema.</li>
+        <li><strong>Refugio</strong>: cada duelo válido suma un rescate y 0,5 DINO. Con 100 rescates y 50 DINO se abre un evento gratuito con premios de 25, 15 y 10.</li>
+      </ul>
+      <p className="tiny">Todo es DINO de prueba en un servidor de demostración: sin billeteras, contratos, compras ni valor real. No hay promesas de rentabilidad.</p>
       <div className="row center"><button className="btn primary big" onClick={onClose}>¡Entendido!</button></div>
     </Modal>
   );
@@ -354,9 +308,9 @@ function SettingsModal({ saved, osReduce, onChange, onReset, onClose }: { saved:
         </label>
         <label className="field inline">
           <input type="checkbox" checked={p.dev} onChange={(e) => onChange({ dev: e.target.checked })} />
-          Modo desarrollo (abrir cualquier nivel y consultar su solución)
+          Modo desarrollo (abrir cualquier nivel, ver soluciones, saldo de prueba, precargar el refugio, acelerar el evento). Recarga la página para aplicarlo al servidor.
         </label>
-        <button className="btn" onClick={onReset}>Borrar progreso y saldo de prueba</button>
+        <button className="btn" onClick={onReset}>Borrar progreso de práctica</button>
       </div>
     </Modal>
   );

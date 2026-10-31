@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LEVELS, getLevel } from './levels';
 import { Game, fmtTime } from './ui/Game';
+import { RoomScreen } from './ui/Room';
+import { MarketPanel } from './ui/Market';
 import { DINO_COLORS, DinoArt, Fern, Palm, PieceIcon, PORTAL_STYLES, SymbolBadge, Volcano } from './ui/art';
 import { clearSaved, loadSaved, save } from './platform/storage';
 import type { Saved } from './platform/storage';
@@ -8,7 +10,8 @@ import { play, setSound } from './platform/sound';
 import { REWARD_CONFIG, communitySnapshot } from './rewards/rewardRules';
 import type { CompletionResult } from './rewards/rewardRules';
 
-type Screen = { name: 'start' } | { name: 'levels' } | { name: 'game'; levelId: number; attempt: number };
+type Screen = { name: 'start' } | { name: 'levels' } | { name: 'game'; levelId: number; attempt: number }
+  | { name: 'room'; code?: string };
 
 const useReducedMotionQuery = () => {
   const [v, setV] = useState(() => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
@@ -24,9 +27,13 @@ const useReducedMotionQuery = () => {
 
 export default function App() {
   const [saved, setSaved] = useState<Saved>(() => loadSaved());
-  const [screen, setScreen] = useState<Screen>({ name: 'start' });
+  const [screen, setScreen] = useState<Screen>(() => {
+    const code = new URLSearchParams(location.search).get('room');
+    return code ? { name: 'room', code: code.toUpperCase().slice(0, 5) } : { name: 'start' };
+  });
   const [helpOpen, setHelpOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [marketOpen, setMarketOpen] = useState(false);
   const osReduce = useReducedMotionQuery();
   const reduce = saved.prefs.reduceMotion || osReduce;
   const savedRef = useRef(saved);
@@ -76,6 +83,7 @@ export default function App() {
         <span className="proto-badge" title="Todo es simulado: no hay billeteras, contratos ni dinero real">
           Prototipo: recompensas de prueba
         </span>
+        <button className="balance market-chip" onClick={() => setMarketOpen(true)} title="Ver el gráfico del meme (simulado)">DINO <strong>{saved.market.price.toFixed(3)}</strong> <span className={saved.market.history.length > 1 && saved.market.price >= saved.market.history[saved.market.history.length - 2] ? 'up' : 'down'}>{saved.market.history.length > 1 && saved.market.price >= saved.market.history[saved.market.history.length - 2] ? '▲' : '▼'}</span></button>
         <span className="balance" aria-label="Saldo de prueba">
           Saldo: <strong>{saved.ledger.balance.toFixed(1)}</strong> DINO de prueba
         </span>
@@ -90,7 +98,7 @@ export default function App() {
         <button className="btn ghost round" onClick={() => setSettingsOpen(true)} aria-label="Ajustes">⚙</button>
       </div>
 
-      {screen.name === 'start' && <StartScreen onPlay={() => go({ name: 'levels' })} onHelp={openHelp} />}
+      {screen.name === 'start' && <StartScreen onPlay={() => go({ name: 'levels' })} onRoom={() => go({ name: 'room' })} onHelp={openHelp} />}
 
       {screen.name === 'levels' && (
         <LevelSelect
@@ -119,6 +127,24 @@ export default function App() {
         />
       )}
 
+      {screen.name === 'room' && (
+        <RoomScreen
+          saved={saved}
+          setSaved={(f) => setSaved(f)}
+          initialCode={screen.code}
+          reducedMotion={reduce}
+          dev={prefs.dev}
+          onHelp={openHelp}
+          onExit={() => go({ name: 'start' })}
+        />
+      )}
+
+      {marketOpen && (
+        <Modal title="Mercado del meme" onClose={() => setMarketOpen(false)}>
+          <MarketPanel saved={saved} />
+        </Modal>
+      )}
+
       {helpOpen && <HelpModal onClose={() => { setHelpOpen(false); setPrefs({ seenHelp: true }); }} />}
       {settingsOpen && (
         <SettingsModal
@@ -139,7 +165,7 @@ export default function App() {
   );
 }
 
-function StartScreen({ onPlay, onHelp }: { onPlay: () => void; onHelp: () => void }) {
+function StartScreen({ onPlay, onRoom, onHelp }: { onPlay: () => void; onRoom: () => void; onHelp: () => void }) {
   return (
     <main className="start">
       <Volcano style={{ position: 'absolute', right: '4%', top: 40, width: 260 }} />
@@ -155,6 +181,7 @@ function StartScreen({ onPlay, onHelp }: { onPlay: () => void; onHelp: () => voi
         </div>
         <div className="row center">
           <button className="btn primary big" onClick={onPlay} autoFocus>Jugar</button>
+          <button className="btn big" onClick={onRoom}>Carrera con amigos</button>
           <button className="btn big" onClick={onHelp}>Cómo jugar</button>
         </div>
         <p className="proto">Prototipo: recompensas de prueba · sin billeteras ni dinero real</p>

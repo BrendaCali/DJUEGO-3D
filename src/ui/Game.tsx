@@ -32,9 +32,11 @@ export interface GameProps {
   onNext: () => void;
   onRetry: () => void;
   onHelp: () => void;
+  /** Modo carrera de sala: sin premio individual; avisa al ganar. */
+  race?: { onWin: () => void; step: number };
 }
 
-export function Game({ level, ledger, completedBefore, dev, reducedMotion, hasNext, onComplete, onExit, onNext, onRetry, onHelp }: GameProps) {
+export function Game({ level, ledger, completedBefore, dev, reducedMotion, hasNext, onComplete, onExit, onNext, onRetry, onHelp, race }: GameProps) {
   const [session] = useState(() => new GameSession(level, { claimed: completedBefore, reducedMotion }));
   const snap = useSyncExternalStore(session.subscribe, session.getSnapshot);
   const n = level.size;
@@ -99,6 +101,10 @@ export function Game({ level, ledger, completedBefore, dev, reducedMotion, hasNe
     if (snap.phase === 'won' && snap.result && !handled.current) {
       handled.current = true;
       const r = snap.result;
+      if (race) {
+        race.onWin();
+        return;
+      }
       const out = applyCompletion(ledgerRef.current, {
         levelId: level.id,
         remainingSec: r.remainingSec,
@@ -109,7 +115,7 @@ export function Game({ level, ledger, completedBefore, dev, reducedMotion, hasNe
       setReward(out);
       onComplete(level.id, r.usedSec, out);
     }
-  }, [snap.phase, snap.result, level, onComplete]);
+  }, [snap.phase, snap.result, level, onComplete, race]);
 
   const now = () => performance.now();
 
@@ -205,18 +211,18 @@ export function Game({ level, ledger, completedBefore, dev, reducedMotion, hasNe
       <header className="hud">
         <button className="btn ghost" onClick={() => { play('click'); onExit(); }} aria-label="Volver a los niveles">← Niveles</button>
         <div className="hud-title">
-          <span className="hud-level">Nivel {level.id}</span>
+          <span className="hud-level">{race ? `Reto ${race.step} de 9` : `Nivel ${level.id}`}</span>
           <strong>{level.name}</strong>
         </div>
         <div className={`hud-chip timer${lowTime ? ' warn' : ''}`} aria-label="Tiempo restante">
           <span className="hud-label">Tiempo</span>
           <span className="hud-value" role="timer">{fmtTime(snap.remainingSec)}</span>
         </div>
-        <div className="hud-chip reward" title="Premio de prueba si completas ahora">
+        {!race && <div className="hud-chip reward" title="Premio de prueba si completas ahora">
           <span className="hud-label">Recompensa potencial</span>
           <span className="hud-value">{claimed ? 'Práctica' : `${potential.toFixed(1)} DINO`}</span>
           <span className="hud-sub">{claimed ? 'ya cobrado · sin premio' : 'DINO de prueba'}</span>
-        </div>
+        </div>}
         <div className="hud-chip">
           <span className="hud-label">Intentos fallidos</span>
           <span className="hud-value">{snap.failedAttempts}</span>
@@ -402,14 +408,14 @@ export function Game({ level, ledger, completedBefore, dev, reducedMotion, hasNe
                 <svg viewBox="-50 -50 100 100" width="120" height="120" className="result-dino" aria-hidden="true">
                   <DinoArt dino="green" mood="happy" />
                 </svg>
-                <h2>¡Nivel superado!</h2>
+                <h2>{race ? '¡Reto superado!' : '¡Nivel superado!'}</h2>
                 <dl className="stats">
                   <div><dt>Tiempo utilizado</dt><dd>{fmtTime(snap.result.usedSec)}</dd></div>
                   <div><dt>Intentos fallidos</dt><dd>{snap.result.failedAttempts}</dd></div>
-                  <div>
+                  {!race && <div>
                     <dt>Recompensa de prueba</dt>
                     <dd>{reward ? (reward.alreadyClaimed ? '0 · ya cobrado' : `+${reward.awarded.toFixed(1)} DINO`) : '…'}</dd>
-                  </div>
+                  </div>}
                 </dl>
                 <p className="muted">DINO de prueba: valores simulados, sin valor real.</p>
               </>
@@ -422,14 +428,14 @@ export function Game({ level, ledger, completedBefore, dev, reducedMotion, hasNe
                 <dl className="stats">
                   <div><dt>Tiempo utilizado</dt><dd>{fmtTime(level.timeSec)}</dd></div>
                   <div><dt>Intentos fallidos</dt><dd>{snap.failedAttempts}</dd></div>
-                  <div><dt>Recompensa de prueba</dt><dd>0 DINO (sin premio)</dd></div>
+                  {!race && <div><dt>Recompensa de prueba</dt><dd>0 DINO (sin premio)</dd></div>}
                 </dl>
               </>
             )}
             <div className="row center">
-              {phase === 'won' && hasNext && <button className="btn primary big" onClick={onNext}>Siguiente nivel</button>}
+              {phase === 'won' && hasNext && <button className="btn primary big" onClick={onNext}>{race ? (race.step >= 9 ? 'Terminar' : 'Siguiente reto') : 'Siguiente nivel'}</button>}
               <button className="btn big" onClick={onRetry}>Reintentar</button>
-              <button className="btn big" onClick={onExit}>Volver a niveles</button>
+              <button className="btn big" onClick={onExit}>{race ? 'Salir de la sala' : 'Volver a niveles'}</button>
             </div>
           </div>
         </div>

@@ -7,9 +7,9 @@ export const CELL = 100;
 export const PATH_W = 38;
 const OUTLINE_W = 50;
 
-export const DINO_COLORS: Record<DinoId, { body: string; dark: string; belly: string; name: string }> = {
-  green: { body: '#5ec45a', dark: '#2f8a3c', belly: '#d8f2a8', name: 'verde' },
-  orange: { body: '#f7973a', dark: '#c9620f', belly: '#ffe2ae', name: 'naranja' },
+export const DINO_COLORS: Record<DinoId, { body: string; dark: string; belly: string; light: string; spike: string; spot: string; name: string }> = {
+  green: { body: '#5ec45a', dark: '#2f8a3c', belly: '#d8f2a8', light: '#9be58a', spike: '#f7c13a', spot: '#2f8a3c', name: 'verde' },
+  orange: { body: '#f7973a', dark: '#c9620f', belly: '#ffe2ae', light: '#ffc274', spike: '#e0568f', spot: '#c9620f', name: 'naranja' },
 };
 
 export const PORTAL_STYLES: Record<string, { color: string; glow: string; symbol: 'diamond' | 'star' | 'moon' }> = {
@@ -236,40 +236,82 @@ export function DinoArt({ dino, mood = 'wait', facing = 1, moving }: DinoProps) 
   const c = DINO_COLORS[dino];
   const oops = mood === 'oops';
   const happy = mood === 'happy';
+  const id = `dino-${dino}`;
   return (
     <g transform={`scale(${facing} 1)`}>
-      <ellipse cx="0" cy="38" rx="28" ry="7" fill="#000" opacity="0.22" />
+      <defs>
+        <radialGradient id={`${id}-body`} cx="35%" cy="25%" r="85%">
+          <stop offset="0" stopColor={c.light} />
+          <stop offset="0.55" stopColor={c.body} />
+          <stop offset="1" stopColor={c.dark} />
+        </radialGradient>
+        <linearGradient id={`${id}-belly`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#fffbe8" />
+          <stop offset="1" stopColor={c.belly} />
+        </linearGradient>
+      </defs>
+      <ellipse cx="0" cy="38" rx="30" ry="7" fill="#000" opacity="0.22" />
       <g className={moving ? 'dino-walk' : mood === 'wait' ? 'dino-idle' : undefined}>
-        {/* cola */}
-        <path d="M-22 12 Q-46 14 -44 -4 Q-34 6 -20 -2 Z" fill={c.body} stroke={c.dark} strokeWidth="3" strokeLinejoin="round" />
-        {/* patas */}
-        <g className="leg-a"><rect x="-14" y="20" width="11" height="17" rx="5" fill={c.dark} /></g>
-        <g className="leg-b"><rect x="5" y="20" width="11" height="17" rx="5" fill={c.dark} /></g>
+        {/* cola con púas */}
+        <path d="M-20 10 Q-44 16 -50 -4 Q-46 -10 -40 -6 Q-32 4 -18 -4 Z" fill={`url(#${id}-body)`} stroke={c.dark} strokeWidth="3" strokeLinejoin="round" />
+        <path d="M-40 4 l-4 -9 l8 3 Z M-30 6 l-3 -9 l8 4 Z" fill={c.spike} stroke={c.dark} strokeWidth="1.5" strokeLinejoin="round" />
+        {/* patas con dedos */}
+        <g className="leg-a">
+          <rect x="-15" y="19" width="12" height="18" rx="6" fill={c.dark} />
+          <path d="M-17 36 q8 -3 14 0 l0 3 l-14 0 Z" fill={c.dark} stroke="#fff" strokeOpacity="0.25" strokeWidth="1" />
+        </g>
+        <g className="leg-b">
+          <rect x="5" y="19" width="12" height="18" rx="6" fill={c.dark} />
+          <path d="M3 36 q8 -3 14 0 l0 3 l-14 0 Z" fill={c.dark} stroke="#fff" strokeOpacity="0.25" strokeWidth="1" />
+        </g>
         {/* cuerpo */}
-        <ellipse cx="0" cy="8" rx="27" ry="22" fill={c.body} stroke={c.dark} strokeWidth="3" />
-        <ellipse cx="4" cy="14" rx="15" ry="12" fill={c.belly} />
-        {/* púas */}
-        {[-16, -4, 8].map((x) => (
-          <path key={x} d={`M${x} -12 l5 -11 l5 11 Z`} fill={c.dark} />
+        <ellipse cx="0" cy="8" rx="28" ry="23" fill={`url(#${id}-body)`} stroke={c.dark} strokeWidth="3" />
+        <path d="M-4 22 Q6 32 20 18 Q22 6 6 4 Q-10 6 -4 22 Z" fill={`url(#${id}-belly)`} />
+        {[-6, 2, 10].map((y) => <path key={y} d={`M6 ${y + 14} q8 3 14 -1`} stroke={c.belly} strokeOpacity="0.9" strokeWidth="1.4" fill="none" strokeLinecap="round" transform="translate(0 2)" />)}
+        {/* manchas */}
+        <circle cx="-14" cy="2" r="4" fill={c.spot} opacity="0.7" />
+        <circle cx="-6" cy="-6" r="2.6" fill={c.spot} opacity="0.7" />
+        <circle cx="-18" cy="14" r="2.8" fill={c.spot} opacity="0.7" />
+        {/* bracito */}
+        <path d="M10 10 q8 2 9 9 q-6 2 -10 -3 Z" fill={c.body} stroke={c.dark} strokeWidth="2" strokeLinejoin="round" />
+        {/* púas de la espalda */}
+        {[-18, -7, 4].map((x, i) => (
+          <path key={x} d={`M${x} -13 l${5 + (i === 1 ? 1 : 0)} -${11 + i} l5 ${11 + i} Z`} fill={c.spike} stroke={c.dark} strokeWidth="1.8" strokeLinejoin="round" />
         ))}
         {/* cabeza */}
-        <circle cx="16" cy="-14" r="19" fill={c.body} stroke={c.dark} strokeWidth="3" />
-        <ellipse cx="28" cy="-8" rx="9" ry="7" fill={c.belly} opacity="0.9" />
-        <circle cx="22" cy="-21" r="6.5" fill="#fff" stroke="#2b2b2b" strokeWidth="1.5" />
-        <circle cx={oops ? 21 : 23.5} cy={oops ? -19.5 : -21} r="3.2" fill="#1d1d1d" />
-        <circle cx="24.4" cy="-22.4" r="1.1" fill="#fff" />
+        <path d="M-2 -10 Q-2 -34 18 -34 Q40 -32 42 -12 Q42 2 28 3 Q10 6 -2 -10 Z" fill={`url(#${id}-body)`} stroke={c.dark} strokeWidth="3" strokeLinejoin="round" />
+        <ellipse cx="30" cy="-6" rx="11" ry="8" fill={`url(#${id}-belly)`} opacity="0.95" />
+        <circle cx="35" cy="-10" r="1.5" fill={c.dark} opacity="0.7" />
+        <circle cx="30" cy="-11" r="1.5" fill={c.dark} opacity="0.7" />
+        {/* ojo */}
+        <g className="dino-eye">
+          <ellipse cx="21" cy="-20" rx="8" ry={oops ? 8.8 : 8} fill="#fff" stroke="#2b2b2b" strokeWidth="1.8" />
+          <circle cx={oops ? 19.5 : 23} cy={oops ? -18.5 : -20} r="4.4" fill="#1d1d1d" />
+          <circle cx={oops ? 20.5 : 24.4} cy={oops ? -20 : -21.8} r="1.7" fill="#fff" />
+          <circle cx={oops ? 18 : 21.5} cy={oops ? -16.5 : -18} r="0.9" fill="#fff" opacity="0.8" />
+        </g>
+        {/* ceja, boca y mejilla */}
         {oops ? (
           <>
-            <path d="M16 -29 L27 -27" stroke={c.dark} strokeWidth="2.5" strokeLinecap="round" />
-            <path d="M24 -1 q6 -3 10 0" stroke="#7a2b12" strokeWidth="2.5" fill="none" strokeLinecap="round" />
-            <path d="M33 -30 q4 6 0 9 q-4 -3 0 -9" fill="#7fd0ff" stroke="#2c86b8" strokeWidth="1" />
+            <path d="M12 -31 L27 -27" stroke={c.dark} strokeWidth="3" strokeLinecap="round" />
+            <path d="M26 -1 q6 -4 12 0" stroke="#7a2b12" strokeWidth="2.8" fill="none" strokeLinecap="round" />
+            <path d="M38 -30 q5 7 0 11 q-5 -4 0 -11" fill="#7fd0ff" stroke="#2c86b8" strokeWidth="1" />
           </>
         ) : happy ? (
-          <path d="M21 -5 q7 8 14 0 Z" fill="#8a2b1a" stroke="#7a2b12" strokeWidth="2" strokeLinejoin="round" />
+          <>
+            <path d="M14 -30 Q21 -34 28 -30" stroke={c.dark} strokeWidth="2.6" fill="none" strokeLinecap="round" />
+            <path d="M24 -4 q9 12 18 0 Z" fill="#8a2b1a" stroke="#7a2b12" strokeWidth="2" strokeLinejoin="round" />
+            <path d="M28 2 q5 4 10 0 q-5 -2 -10 0 Z" fill="#ff7b86" />
+          </>
         ) : (
-          <path d="M22 -4 q6 4 12 0" stroke="#7a2b12" strokeWidth="2.5" fill="none" strokeLinecap="round" />
+          <>
+            <path d="M14 -30 Q21 -33 28 -29" stroke={c.dark} strokeWidth="2.4" fill="none" strokeLinecap="round" />
+            <path d="M25 -2 q7 5 14 0" stroke="#7a2b12" strokeWidth="2.6" fill="none" strokeLinecap="round" />
+          </>
         )}
-        <circle cx="10" cy="-6" r="3.4" fill="#ff9aa2" opacity="0.55" />
+        <ellipse cx="11" cy="-8" rx="4.6" ry="3.2" fill="#ff8f9a" opacity="0.6" />
+        {/* brillo */}
+        <path d="M2 -26 Q10 -34 20 -33" stroke="#fff" strokeOpacity="0.55" strokeWidth="3" fill="none" strokeLinecap="round" />
       </g>
     </g>
   );

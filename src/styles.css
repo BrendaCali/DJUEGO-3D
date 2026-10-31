@@ -335,3 +335,13 @@ body { background: radial-gradient(1200px 500px at 85% -10%, rgba(255, 244, 190,
 .shelter-scene .s-item { transition: opacity .6s, transform .6s; transform-box: fill-box; }
 .shelter-scene .s-item.off { opacity: .1; filter: grayscale(1); }
 .proto-badge { background: linear-gradient(#fff6c8, #ffe58a); }
+
+/* Dinosaurios */
+.dino-eye { transform-box: fill-box; transform-origin: center; animation: blink 4.2s infinite; }
+.reduce-motion .dino-eye { animation: none; }
+@keyframes blink { 0%, 94%, 100% { transform: scaleY(1); } 97% { transform: scaleY(.1); } }
+.leg-a, .leg-b { transform-box: fill-box; transform-origin: top center; }
+.dino-walk .leg-a { animation: step .3s ease-in-out infinite; }
+.dino-walk .leg-b { animation: step .3s ease-in-out infinite reverse; }
+.reduce-motion .dino-walk .leg-a, .reduce-motion .dino-walk .leg-b { animation: none; }
+@keyframes step { 50% { transform: rotate(18deg); } }

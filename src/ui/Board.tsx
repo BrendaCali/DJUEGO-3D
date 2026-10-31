@@ -1,10 +1,10 @@
-import { memo, useMemo, useRef } from 'react';
+import { memo, useRef } from 'react';
 import type { DragEvent, MouseEvent, PointerEvent } from 'react';
 import { DX, DY } from '../game/geometry';
 import { cellMap, isEditable, poseAt } from '../game/engine';
 import type { Snapshot } from '../game/session';
 import type { Board as BoardData, DinoId, Level, PieceType } from '../game/types';
-import { BombDef, DINO_COLORS, DinoArt, HomeArt, PortalArt, RockArt, StartArt, TileArt } from './art';
+import { DINO_COLORS, DinoArt, HomeArt, PortalArt, RockArt, StartArt, TileArt } from './art';
 
 const hash = (x: number, y: number) => (x * 73856093) ^ (y * 19349663);
 
@@ -92,17 +92,6 @@ const Tiles = memo(function Tiles({ level, board }: { level: Level; board: Board
   return <g>{out}</g>;
 });
 
-function shuffled(n: number, seed: number) {
-  const a = Array.from({ length: n }, (_, i) => i);
-  let s = seed * 9301 + 49297;
-  for (let i = n - 1; i > 0; i--) {
-    s = (s * 9301 + 49297) % 233280;
-    const j = Math.floor((s / 233280) * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-
 export interface BoardProps {
   level: Level;
   snap: Snapshot;
@@ -117,7 +106,6 @@ export interface BoardProps {
 export function BoardView({ level, snap, cellPx, panMode, hover, onHover, onCell, onDropPiece }: BoardProps) {
   const n = level.size;
   const ref = useRef<SVGSVGElement>(null);
-  const bombOrder = useMemo(() => shuffled(n * n, level.id), [n, level.id]);
 
   const cellFrom = (cx: number, cy: number) => {
     const r = ref.current!.getBoundingClientRect();
@@ -168,8 +156,6 @@ export function BoardView({ level, snap, cellPx, panMode, hover, onHover, onCell
     };
   });
 
-  const bombCount = Math.floor(snap.bombProgress * n * n);
-  const explosion = snap.explosion;
   const m = snap.marker;
   const canGhost = hover && snap.phase === 'building' && isEditable(level, hover.x, hover.y);
   const hoverTile = hover ? snap.board[hover.y * n + hover.x] : null;
@@ -190,14 +176,6 @@ export function BoardView({ level, snap, cellPx, panMode, hover, onHover, onCell
       role="img"
       aria-label={`Tablero de ${n} por ${n}`}
     >
-      <defs>
-        <BombDef />
-        <radialGradient id="boom-grad">
-          <stop offset="0" stopColor="#fff2b0" />
-          <stop offset="0.45" stopColor="#ffb13a" />
-          <stop offset="1" stopColor="#e8552a" stopOpacity="0.1" />
-        </radialGradient>
-      </defs>
       <Ground level={level} />
       <Fixed level={level} />
       <Tiles level={level} board={snap.board} />
@@ -229,8 +207,8 @@ export function BoardView({ level, snap, cellPx, panMode, hover, onHover, onCell
             </>
           ) : (
             <g transform={`translate(${m.x * 100 + 50} ${m.y * 100 + 50})`} className="pulse">
-              <path d="M0 -44 L11 -16 L40 -30 L22 -4 L48 12 L18 14 L22 44 L0 24 L-22 44 L-18 14 L-48 12 L-22 -4 L-40 -30 L-11 -16 Z" fill="#ffb13a" stroke="#e8552a" strokeWidth="5" strokeLinejoin="round" />
-              <text y="8" textAnchor="middle" fontSize="26" fontWeight="800" fill="#7a1d0f">¡PUM!</text>
+              <circle r="34" fill="#ffd36b" stroke="#e8a02a" strokeWidth="5" />
+              <text y="9" textAnchor="middle" fontSize="26" fontWeight="800" fill="#7a4a0f">¡Ups!</text>
             </g>
           )}
         </g>
@@ -255,17 +233,7 @@ export function BoardView({ level, snap, cellPx, panMode, hover, onHover, onCell
           </g>
         ))}
 
-      {losing &&
-        bombOrder.slice(0, bombCount).map((i) => (
-          <use key={i} href="#bomb-def" className="bomb-pop" x={(i % n) * 100} y={Math.floor(i / n) * 100} pointerEvents="none" />
-        ))}
-      {losing && explosion > 0 && (
-        <g pointerEvents="none" opacity={Math.max(0, 1 - explosion * 0.9) * 0.9}>
-          <circle cx={n * 50} cy={n * 50} r={Math.max(1, explosion * n * 78)} fill="url(#boom-grad)" />
-          <circle cx={n * 30} cy={n * 36} r={Math.max(1, explosion * n * 40)} fill="url(#boom-grad)" opacity="0.8" />
-          <circle cx={n * 72} cy={n * 64} r={Math.max(1, explosion * n * 44)} fill="url(#boom-grad)" opacity="0.8" />
-        </g>
-      )}
+      {losing && <rect width={n * 100} height={n * 100} fill="#1d2a3a" opacity={snap.bombProgress * 0.45} pointerEvents="none" />}
     </svg>
   );
 }

@@ -171,7 +171,7 @@ function StartScreen({ onPlay, onDuel, onShelter, onEvent, onWallet, onHelp }: {
       <Fern style={{ position: 'absolute', left: '16%', bottom: 0, width: 120 }} />
       <div className="start-card">
         <h1>Dino <span>Escape</span></h1>
-        <p className="tagline">Construye el camino, gira las piezas y lleva a los dinos a su refugio antes de que explote el volcán. Cada duelo ayuda a reconstruir el refugio comunitario.</p>
+        <p className="tagline">Construye el camino, gira las piezas y lleva a los dinos a su refugio antes de que se acabe el tiempo. Cada duelo ayuda a reconstruir el refugio comunitario.</p>
         <div className="hero" aria-hidden="true">
           <svg viewBox="-60 -60 120 120" width="190" height="190" className="hero-dino"><DinoArt dino="green" mood="happy" /></svg>
           <svg viewBox="-60 -60 120 120" width="150" height="150" className="hero-dino small"><DinoArt dino="orange" facing={-1} /></svg>
@@ -250,7 +250,7 @@ function HelpModal({ onClose }: { onClose: () => void }) {
         <li>Elige una pieza de la bandeja, <strong>gírala</strong> (↺ ↻ o teclas Q / R) y pulsa una casilla libre. En escritorio también puedes arrastrarla.</li>
         <li>Une la <strong>salida</strong> con el <strong>refugio</strong>. Dos piezas vecinas se conectan solo si las dos tienen abertura en el borde compartido.</li>
         <li>Pulsa <strong>¡Corre, Dino!</strong>. Si el camino falla verás dónde y puedes corregir mientras quede tiempo: el error gasta tiempo, no DINO.</li>
-        <li>Si el tiempo llega a cero, el tablero se llena de bombas.</li>
+        <li>Si el tiempo llega a cero, el tablero se oscurece y puedes reintentar.</li>
       </ol>
       <div className="help-pieces">
         {(

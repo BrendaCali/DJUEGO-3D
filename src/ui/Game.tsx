@@ -84,8 +84,7 @@ export function Game({ level, ledger, completedBefore, dev, reducedMotion, hasNe
     const p = prev.current;
     if (snap.failedAttempts > p.fails) play('error');
     if (snap.phase === 'celebrating' && p.phase !== 'celebrating') play('win');
-    if (snap.phase === 'losing' && p.phase !== 'losing') play('fuse');
-    if (snap.explosion > 0 && p.explosion === 0) play('boom');
+    if (snap.phase === 'losing' && p.phase !== 'losing') play('error');
     prev.current = { phase: snap.phase, fails: snap.failedAttempts, explosion: snap.explosion, bombs: 0 };
   }, [snap.phase, snap.failedAttempts, snap.explosion]);
 

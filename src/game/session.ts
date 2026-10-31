@@ -46,8 +46,8 @@ export interface SessionOptions {
 
 const FAIL_PAUSE_MS = 2200;
 const CELEBRATE_MS = 1000;
-const BOMBS_MS = 2600;
-const BOOM_MS = 1100;
+const BOMBS_MS = 900;
+const BOOM_MS = 300;
 const MAX_HISTORY = 200;
 
 /**

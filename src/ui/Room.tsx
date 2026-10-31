@@ -3,6 +3,7 @@ import { LEVELS } from '../levels';
 import { RoomClient, TOTAL_LEVELS } from '../rooms/roomClient';
 import type { RoomPlayer, RoomState } from '../rooms/roomClient';
 import { ROOM_CONFIG, nextPrice } from '../rooms/roomRules';
+import { recordDuel, SHELTER_CONFIG, shelterProgress } from '../shelter/shelterRules';
 import type { Saved } from '../platform/storage';
 import { play } from '../platform/sound';
 import { DinoArt } from './art';
@@ -35,6 +36,25 @@ export function Sparkline({ values }: { values: number[] }) {
   );
 }
 
+export function FeeTable({ entry }: { entry: number }) {
+  const pot = entry * 2;
+  const op = Math.round(pot * ROOM_CONFIG.operationRate * 100) / 100;
+  const sh = Math.round(pot * ROOM_CONFIG.shelterRate * 100) / 100;
+  const win = Math.round((pot - op - sh) * 100) / 100;
+  return (
+    <table className="fee-table" aria-label="Reparto del pozo">
+      <caption>Reparto del pozo con entrada {entry}</caption>
+      <tbody>
+        <tr><th>Ganador</th><td>{fmt(win)}</td></tr>
+        <tr><th>Operación del proyecto</th><td>{fmt(op)}</td></tr>
+        <tr><th>Refugio comunitario</th><td>{fmt(sh)}</td></tr>
+        <tr className="total"><th>Total aportado</th><td>{fmt(pot)}</td></tr>
+      </tbody>
+      <tfoot><tr><td colSpan={2}>Ganancia neta del ganador: +{fmt(win - entry)} · el perdedor pierde su entrada ({entry}) y nada más.</td></tr></tfoot>
+    </table>
+  );
+}
+
 function PriceCard({ saved }: { saved: Saved }) {
   return <MarketPanel saved={saved} />;
 }
@@ -44,7 +64,7 @@ export function RoomScreen({ saved, setSaved, initialCode, reducedMotion, dev, o
   const clientRef = useRef<RoomClient | null>(null);
   const [, bump] = useState(0);
   const [entry, setEntry] = useState<number>(ROOM_CONFIG.entryOptions[0]);
-  const [capacity, setCapacity] = useState(3);
+  const capacity = ROOM_CONFIG.maxPlayers;
   const [codeInput, setCodeInput] = useState(initialCode ?? '');
   const [name, setName] = useState(saved.name);
   const [step, setStep] = useState(1);
@@ -95,8 +115,9 @@ export function RoomScreen({ saved, setSaved, initialCode, reducedMotion, dev, o
         return {
           ...v,
           ledger: { ...v.ledger, balance: Math.round((v.ledger.balance + (entryPaid ? mine : 0)) * 100) / 100 },
-          market: { price, history: [...v.market.history, price].slice(-30) },
+          market: res.valid ? { price, history: [...v.market.history, price].slice(-30) } : v.market,
           settled: [...v.settled, s.code].slice(-50),
+          shelter: entryPaid ? recordDuel(v.shelter, res) : v.shelter,
         };
       });
       play(res.ranking[0] === me.current.id ? 'win' : 'error');
@@ -124,15 +145,15 @@ export function RoomScreen({ saved, setSaved, initialCode, reducedMotion, dev, o
 
   // ---------- Menú ----------
   if (!s) {
-    const rec = ROOM_CONFIG.podium[capacity];
     const noFunds = saved.ledger.balance < entry;
     return (
       <main className="room">
         <div className="levels-head">
           <button className="btn ghost" onClick={leave}>← Inicio</button>
-          <h2>Carrera con amigos</h2>
+          <h2>Duelo con DINO de prueba</h2>
         </div>
-        <p className="muted">Hasta 4 jugadores resuelven los mismos 9 retos. Todos pagan una entrada de DINO de prueba y el pozo se reparte por puestos. Todo es simulado.</p>
+        <p className="muted">Dos jugadores aportan la misma entrada, que queda bloqueada antes de empezar, y resuelven los mismos 9 retos. El ganador recibe el pozo menos dos comisiones anunciadas; una de ellas alimenta el Refugio comunitario. Todo es simulado.</p>
+        <FeeTable entry={entry} />
         <div className="room-grid">
           <section className="card-plain">
             <h3>Tu nombre</h3>
@@ -152,12 +173,7 @@ export function RoomScreen({ saved, setSaved, initialCode, reducedMotion, dev, o
                 {ROOM_CONFIG.entryOptions.map((v) => <option key={v} value={v}>{v}</option>)}
               </select>
             </label>
-            <label className="field"><span>Jugadores</span>
-              <select value={capacity} onChange={(e) => setCapacity(Number(e.target.value))}>
-                {[2, 3, 4].map((v) => <option key={v} value={v}>{v}</option>)}
-              </select>
-            </label>
-            <p className="tiny">Pozo: {entry * capacity} · impuesto del meme {ROOM_CONFIG.feeRate * 100} % · reparto: {rec.map((p, i) => `${i + 1}.º ${Math.round(p * 90)} %`).join(' · ')}</p>
+            <p className="tiny">Pozo bloqueado: {entry * capacity} DINO de prueba (2 × {entry}).</p>
             <button
               className="btn primary big"
               disabled={noFunds}
@@ -167,7 +183,7 @@ export function RoomScreen({ saved, setSaved, initialCode, reducedMotion, dev, o
                 bump((v) => v + 1);
               }}
             >
-              Crear sala
+              Crear duelo
             </button>
           </section>
 
@@ -217,7 +233,8 @@ export function RoomScreen({ saved, setSaved, initialCode, reducedMotion, dev, o
               <button className="btn" onClick={() => window.open(link, '_blank')}>Abrir como invitado ↗</button>
             </div>
             <p className="tiny link">{link}</p>
-            <p className="tiny">Entrada: <strong>{s.entry}</strong> · pozo: <strong>{s.entry * s.capacity}</strong> · impuesto {ROOM_CONFIG.feeRate * 100} %</p>
+            <p className="tiny">Entrada: <strong>{s.entry}</strong> cada uno · al empezar quedan bloqueados <strong>{s.entry * s.capacity}</strong> DINO de prueba.</p>
+            <FeeTable entry={s.entry} />
           </section>
 
           <section className="card-plain">
@@ -237,9 +254,9 @@ export function RoomScreen({ saved, setSaved, initialCode, reducedMotion, dev, o
             </ul>
             {youHost ? (
               <div className="row">
-                <button className="btn" disabled={s.players.length >= s.capacity} onClick={() => c!.addBot()}>+ Añadir bot</button>
+                <button className="btn" disabled={s.players.length >= s.capacity} onClick={() => c!.addBot()}>+ Rival bot (demo)</button>
                 <button className="btn primary big" disabled={s.players.length < ROOM_CONFIG.minPlayers || noFunds} onClick={() => { play('run'); c!.start(); }}>
-                  Empezar carrera
+                  Bloquear entradas y empezar
                 </button>
               </div>
             ) : (
@@ -281,7 +298,21 @@ export function RoomScreen({ saved, setSaved, initialCode, reducedMotion, dev, o
                 );
               })}
             </ol>
-            <p className="tiny">Pozo {fmt(r.pot)} · quemado/impuesto del meme {fmt(r.burned)} · {r.losers} jugador(es) perdieron parte de su entrada. Valores de prueba.</p>
+            {r.valid ? (
+              <dl className="split">
+                <div><dt>Ganador</dt><dd>{fmt(r.payouts[r.ranking[0]])}</dd></div>
+                <div><dt>Operación del proyecto</dt><dd>{fmt(r.operation)}</dd></div>
+                <div><dt>Refugio comunitario</dt><dd>{fmt(r.shelter)}</dd></div>
+                <div className="total"><dt>Total aportado</dt><dd>{fmt(r.pot)}</dd></div>
+              </dl>
+            ) : (
+              <p className="tiny">Nadie completó ningún reto: se devolvieron las entradas y el duelo no cuenta para el refugio.</p>
+            )}
+            {r.valid && (
+              <p className="tiny shelter-note">
+                🦕 El refugio sube a <strong>{saved.shelter.duels}/{SHELTER_CONFIG.goalDuels}</strong> rescates ({Math.round(shelterProgress(saved.shelter) * 100)} %) y guarda <strong>{fmt(saved.shelter.fund)}</strong> DINO de prueba.
+              </p>
+            )}
             <div className="row">
               <button className="btn primary big" onClick={() => { clientRef.current?.leave(); clientRef.current = null; paid.current = null; setStep(1); bump((v) => v + 1); }}>Nueva sala</button>
               <button className="btn big" onClick={leave}>Salir</button>

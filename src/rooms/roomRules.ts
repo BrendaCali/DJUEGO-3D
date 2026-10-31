@@ -1,28 +1,28 @@
 /**
- * Reglas de las salas competitivas (DEMOSTRATIVAS: solo DINO de prueba).
+ * Reglas de los duelos (DEMOSTRATIVAS: solo DINO de prueba).
  * Módulo independiente del juego y de la red; se puede sustituir por una lógica real.
+ *
+ * Duelo: dos jugadores aportan la misma entrada, que queda bloqueada antes de empezar.
+ * El pozo se reparte así: comisión de operación + aporte al refugio comunitario (ambas
+ * anunciadas) y el resto, al ganador. Con entrada 10: 19 / 0,5 / 0,5.
  */
 
 export const ROOM_CONFIG = {
   minPlayers: 2,
-  maxPlayers: 4,
+  maxPlayers: 2,
   entryOptions: [10, 25, 50],
-  /** Parte del pozo que se quema / pasa al fondo del meme. */
-  feeRate: 0.1,
-  /** Reparto del pozo neto por puesto, según cuántos jugadores hay (suma 1). */
-  podium: {
-    2: [0.78, 0.22],
-    3: [0.61, 0.28, 0.11],
-    4: [0.5, 0.28, 0.17, 0.05],
-  } as Record<number, number[]>,
+  /** Parte del pozo que se queda el proyecto (operación). */
+  operationRate: 0.025,
+  /** Parte del pozo que va al refugio comunitario. */
+  shelterRate: 0.025,
   basePrice: 1,
   minPrice: 0.2,
   maxPrice: 20,
-  /** Subida del precio por cada 1 % del pozo quemado, por jugador por encima de 1. */
+  /** Subida del precio por cada 1 % del pozo que sale en comisiones, por jugador por encima de 1. */
   upPerBurnPct: 0.012,
   /** Bajada del precio por cada jugador que sale perdiendo. */
   downPerLoser: 0.03,
-  /** Segundos que tienen los demás tras terminar el primero. */
+  /** Segundos que tiene el rival tras terminar el primero. */
   graceSec: 90,
   faucet: 100,
 } as const;
@@ -41,33 +41,44 @@ export const rank = <T extends Standing>(list: T[]): T[] =>
 
 export interface Settlement {
   pot: number;
+  /** Total de comisiones (operación + refugio). */
   burned: number;
+  operation: number;
+  shelter: number;
   payouts: Record<string, number>;
   /** Cambio neto de cada jugador (pago − entrada). */
   net: Record<string, number>;
   losers: number;
+  /** false si nadie completó ningún reto: se devuelven las entradas y no cuenta como duelo. */
+  valid: boolean;
 }
 
-export function settle(ranked: { id: string }[], entry: number): Settlement {
-  const n = ranked.length;
-  const pot = entry * n;
-  const burned = Math.round(pot * ROOM_CONFIG.feeRate * 100) / 100;
-  const net_pot = pot - burned;
-  const shares = ROOM_CONFIG.podium[n] ?? ROOM_CONFIG.podium[4];
+const r2 = (n: number) => Math.round(n * 100) / 100;
+
+export function settle(ranked: { id: string; done: number }[], entry: number): Settlement {
+  const pot = r2(entry * ranked.length);
   const payouts: Record<string, number> = {};
   const net: Record<string, number> = {};
-  let losers = 0;
+  if (ranked.length < 2 || ranked[0].done <= 0) {
+    ranked.forEach((p) => {
+      payouts[p.id] = entry;
+      net[p.id] = 0;
+    });
+    return { pot, burned: 0, operation: 0, shelter: 0, payouts, net, losers: 0, valid: false };
+  }
+  const operation = r2(pot * ROOM_CONFIG.operationRate);
+  const shelter = r2(pot * ROOM_CONFIG.shelterRate);
+  const win = r2(pot - operation - shelter);
   ranked.forEach((p, i) => {
-    const pay = Math.round(net_pot * (shares[i] ?? 0) * 100) / 100;
-    payouts[p.id] = pay;
-    net[p.id] = Math.round((pay - entry) * 100) / 100;
-    if (pay < entry) losers++;
+    payouts[p.id] = i === 0 ? win : 0;
+    net[p.id] = r2(payouts[p.id] - entry);
   });
-  return { pot, burned, payouts, net, losers };
+  return { pot, burned: r2(operation + shelter), operation, shelter, payouts, net, losers: ranked.length - 1, valid: true };
 }
 
-/** Sube con lo quemado, baja con cada jugador que pierde. */
+/** Sube con las comisiones, baja con cada jugador que pierde. */
 export function nextPrice(price: number, s: Settlement, players: number): number {
+  if (!s.valid) return price;
   const burnPct = (s.burned / s.pot) * 100;
   const up = burnPct * ROOM_CONFIG.upPerBurnPct * (players - 1);
   const down = s.losers * ROOM_CONFIG.downPerLoser;

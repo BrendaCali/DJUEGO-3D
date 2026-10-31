@@ -7,11 +7,13 @@ import { DINO_COLORS, DinoArt, Fern, Palm, PieceIcon, PORTAL_STYLES, SymbolBadge
 import { clearSaved, loadSaved, save } from './platform/storage';
 import type { Saved } from './platform/storage';
 import { play, setSound } from './platform/sound';
-import { REWARD_CONFIG, communitySnapshot } from './rewards/rewardRules';
 import type { CompletionResult } from './rewards/rewardRules';
+import { ShelterScreen } from './ui/Shelter';
+import { SHELTER_CONFIG, challengeLevelId, resolveChallenge } from './shelter/shelterRules';
+import type { ChallengeOutcome } from './shelter/shelterRules';
 
 type Screen = { name: 'start' } | { name: 'levels' } | { name: 'game'; levelId: number; attempt: number }
-  | { name: 'room'; code?: string };
+  | { name: 'room'; code?: string } | { name: 'shelter' } | { name: 'challenge'; attempt: number };
 
 const useReducedMotionQuery = () => {
   const [v, setV] = useState(() => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
@@ -34,6 +36,7 @@ export default function App() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [marketOpen, setMarketOpen] = useState(false);
+  const [outcome, setOutcome] = useState<ChallengeOutcome | null>(null);
   const osReduce = useReducedMotionQuery();
   const reduce = saved.prefs.reduceMotion || osReduce;
   const savedRef = useRef(saved);
@@ -69,7 +72,20 @@ export default function App() {
     setScreen(s);
   };
 
-  const baseLevel = screen.name === 'game' ? getLevel(screen.levelId) : undefined;
+  const finishChallenge = useCallback((levelTime: number, usedSec: number, failed: number) => {
+    const out = resolveChallenge(savedRef.current.shelter, levelTime, usedSec, failed);
+    if (!out) return;
+    setSaved((s) => ({
+      ...s,
+      shelter: out.state,
+      ledger: { ...s.ledger, balance: Math.round((s.ledger.balance + out.prize) * 100) / 100 },
+    }));
+    setOutcome(out);
+    setScreen({ name: 'shelter' });
+  }, []);
+
+  const baseLevel = screen.name === 'game' ? getLevel(screen.levelId)
+    : screen.name === 'challenge' ? getLevel(challengeLevelId(saved.shelter)) : undefined;
   // Modo desarrollo: ?time=SEGUNDOS acorta el cronómetro para probar la derrota.
   const level = useMemo(() => {
     if (!baseLevel || !prefs.dev) return baseLevel;
@@ -83,6 +99,9 @@ export default function App() {
         <span className="proto-badge" title="Todo es simulado: no hay billeteras, contratos ni dinero real">
           Prototipo: recompensas de prueba
         </span>
+        <button className="balance market-chip" onClick={() => go({ name: 'shelter' })} title="Ver el refugio comunitario">
+          🦕 Refugio <strong>{Math.min(saved.shelter.duels, SHELTER_CONFIG.goalDuels)}/{SHELTER_CONFIG.goalDuels}</strong>
+        </button>
         <button className="balance market-chip" onClick={() => setMarketOpen(true)} title="Ver el gráfico del meme (simulado)">DINO <strong>{saved.market.price.toFixed(3)}</strong> <span className={saved.market.history.length > 1 && saved.market.price >= saved.market.history[saved.market.history.length - 2] ? 'up' : 'down'}>{saved.market.history.length > 1 && saved.market.price >= saved.market.history[saved.market.history.length - 2] ? '▲' : '▼'}</span></button>
         <span className="balance" aria-label="Saldo de prueba">
           Saldo: <strong>{saved.ledger.balance.toFixed(1)}</strong> DINO de prueba
@@ -98,7 +117,38 @@ export default function App() {
         <button className="btn ghost round" onClick={() => setSettingsOpen(true)} aria-label="Ajustes">⚙</button>
       </div>
 
-      {screen.name === 'start' && <StartScreen onPlay={() => go({ name: 'levels' })} onRoom={() => go({ name: 'room' })} onHelp={openHelp} />}
+      {screen.name === 'start' && <StartScreen onPlay={() => go({ name: 'levels' })} onRoom={() => go({ name: 'room' })} onShelter={() => go({ name: 'shelter' })} onHelp={openHelp} />}
+
+      {screen.name === 'shelter' && (
+        <ShelterScreen
+          saved={saved}
+          setSaved={(f) => setSaved(f)}
+          dev={prefs.dev}
+          outcome={outcome}
+          onDismissOutcome={() => setOutcome(null)}
+          onPlayChallenge={() => go({ name: 'challenge', attempt: 0 })}
+          onDuel={() => go({ name: 'room' })}
+          onBack={() => go({ name: 'start' })}
+        />
+      )}
+
+      {screen.name === 'challenge' && level && (
+        <Game
+          key={`c${level.id}-${screen.attempt}`}
+          level={level}
+          ledger={saved.ledger}
+          completedBefore
+          dev={prefs.dev}
+          reducedMotion={reduce}
+          hasNext={false}
+          free={{ label: 'Desafío comunitario', sub: 'sin entrada', onWin: (used, failed) => finishChallenge(level.timeSec, used, failed) }}
+          onComplete={() => undefined}
+          onExit={() => go({ name: 'shelter' })}
+          onNext={() => go({ name: 'shelter' })}
+          onRetry={() => go({ name: 'challenge', attempt: screen.attempt + 1 })}
+          onHelp={openHelp}
+        />
+      )}
 
       {screen.name === 'levels' && (
         <LevelSelect
@@ -116,6 +166,7 @@ export default function App() {
           level={level}
           ledger={saved.ledger}
           completedBefore={saved.completed[level.id] !== undefined}
+          free={{ label: 'Práctica gratis', sub: 'no gana ni pierde DINO' }}
           dev={prefs.dev}
           reducedMotion={reduce}
           hasNext={level.id < LEVELS.length}
@@ -165,7 +216,7 @@ export default function App() {
   );
 }
 
-function StartScreen({ onPlay, onRoom, onHelp }: { onPlay: () => void; onRoom: () => void; onHelp: () => void }) {
+function StartScreen({ onPlay, onRoom, onShelter, onHelp }: { onPlay: () => void; onRoom: () => void; onShelter: () => void; onHelp: () => void }) {
   return (
     <main className="start">
       <Volcano style={{ position: 'absolute', right: '4%', top: 40, width: 260 }} />
@@ -180,32 +231,14 @@ function StartScreen({ onPlay, onRoom, onHelp }: { onPlay: () => void; onRoom: (
           <svg viewBox="-60 -60 120 120" width="150" height="150" className="hero-dino small"><DinoArt dino="orange" facing={-1} /></svg>
         </div>
         <div className="row center">
-          <button className="btn primary big" onClick={onPlay} autoFocus>Jugar</button>
-          <button className="btn big" onClick={onRoom}>Carrera con amigos</button>
+          <button className="btn primary big" onClick={onPlay} autoFocus>Practicar gratis</button>
+          <button className="btn big" onClick={onRoom}>Duelo con DINO</button>
+          <button className="btn big" onClick={onShelter}>Refugio comunitario</button>
           <button className="btn big" onClick={onHelp}>Cómo jugar</button>
         </div>
         <p className="proto">Prototipo: recompensas de prueba · sin billeteras ni dinero real</p>
       </div>
     </main>
-  );
-}
-
-function CommunityCard({ saved }: { saved: Saved }) {
-  const c = communitySnapshot(saved.ledger);
-  return (
-    <section className="community" aria-label="Comunidad de demostración">
-      <h3>{c.season}</h3>
-      <div className="meter" role="progressbar" aria-valuemin={0} aria-valuemax={c.goal} aria-valuenow={c.rescues} aria-label="Progreso de rescates">
-        <i style={{ width: `${c.progress * 100}%` }} />
-      </div>
-      <p>
-        <strong>{c.rescues}</strong> / {c.goal} rescates · fondo colectivo de prueba: <strong>{c.fund.toLocaleString('es')}</strong> DINO
-      </p>
-      <p className="tiny">
-        {c.unlocked ? 'Meta alcanzada: ¡desbloqueo de demostración conseguido!' : `Faltan ${c.goal - c.rescues} rescates para el desbloqueo de demostración.`}
-      </p>
-      <p className="tiny">Contador local y simulado: no representa a otros jugadores reales.</p>
-    </section>
   );
 }
 
@@ -215,7 +248,7 @@ function LevelSelect({ saved, unlocked, dev, onPick, onBack }: { saved: Saved; u
     <main className="levels">
       <div className="levels-head">
         <button className="btn ghost" onClick={onBack}>← Inicio</button>
-        <h2>Elige un nivel{dev && <span className="dev-tag">DEV: todos abiertos</span>}</h2>
+        <h2>Practicar gratis{dev && <span className="dev-tag">DEV: todos abiertos</span>}</h2>
       </div>
       <div className="levels-grid">
         {cards.map((lv) => {
@@ -231,12 +264,11 @@ function LevelSelect({ saved, unlocked, dev, onPick, onBack }: { saved: Saved; u
               <span className={`chip ${done ? 'ok' : open ? '' : 'lock'}`}>
                 {done ? `✔ Completado · mejor ${fmtTime(done.bestUsedSec)}` : open ? 'Disponible' : '🔒 Bloqueado'}
               </span>
-              {done && <span className="tiny">Premio cobrado: {(saved.ledger.claimed[lv.id] ?? 0).toFixed(1)} DINO de prueba · repetir = práctica</span>}
             </button>
           );
         })}
       </div>
-      <CommunityCard saved={saved} />
+      <p className="tiny">Aquí aprendes sin arriesgar nada: la práctica no gana ni pierde DINO. Para jugar con DINO de prueba, entra a un duelo.</p>
     </main>
   );
 }
@@ -294,9 +326,11 @@ function HelpModal({ onClose }: { onClose: () => void }) {
           ))}
         </li>
         <li>Dos dinos ({DINO_COLORS.green.name} y {DINO_COLORS.orange.name}): cada uno a su refugio (hoja o sol). Si dos dinos coinciden en una casilla o se cruzan de frente, chocan. En un puente, por ejes distintos, no. Elige quién sale primero y con qué retraso.</li>
-        <li>Premio de prueba = 100 × tiempo restante ÷ tiempo total − 10 × intentos fallidos (mínimo 0). Se cobra una vez por nivel; repetir es práctica.</li>
+        <li><strong>Practicar</strong> es gratis: no gana ni pierde DINO.</li>
+        <li><strong>Duelo</strong>: dos jugadores bloquean la misma entrada y resuelven los mismos 9 retos. Gana quien llega más lejos (y antes), y cobra el pozo menos dos comisiones anunciadas.</li>
+        <li><strong>Refugio comunitario</strong>: cada duelo válido le suma una parte de las comisiones. Con 100 rescates se abre un desafío sin entrada cuyos premios salen solo de ese fondo.</li>
       </ul>
-      <p className="tiny">Los {REWARD_CONFIG.maxPerLevel} DINO máximos por nivel son de prueba: no hay billeteras, transacciones ni dinero real.</p>
+      <p className="tiny">Todo es DINO de prueba: no hay billeteras, transacciones ni dinero real.</p>
       <div className="row center"><button className="btn primary big" onClick={onClose}>¡Entendido!</button></div>
     </Modal>
   );

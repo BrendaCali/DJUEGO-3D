@@ -1,6 +1,8 @@
 import { emptyLedger } from '../rewards/rewardRules';
 import type { RewardLedger } from '../rewards/rewardRules';
 import { ROOM_CONFIG } from '../rooms/roomRules';
+import { emptyShelter } from '../shelter/shelterRules';
+import type { ShelterState } from '../shelter/shelterRules';
 
 export interface Prefs {
   sound: boolean;
@@ -21,6 +23,7 @@ export interface Saved {
   /** Salas ya liquidadas (evita cobrar dos veces). */
   settled: string[];
   name: string;
+  shelter: ShelterState;
 }
 
 const KEY = 'dino-escape-prototype-v1';
@@ -45,6 +48,7 @@ export const defaultSaved = (): Saved => ({
   market: { price: ROOM_CONFIG.basePrice, history: seedHistory(ROOM_CONFIG.basePrice) },
   settled: [],
   name: 'Dino' + Math.floor(100 + Math.random() * 900),
+  shelter: emptyShelter(),
 });
 
 export function loadSaved(): Saved {
@@ -61,6 +65,7 @@ export function loadSaved(): Saved {
       market: p.market && p.market.history.length >= 10 ? p.market : { price: p.market?.price ?? base.market.price, history: [...seedHistory(p.market?.price ?? base.market.price).slice(0, -1), ...(p.market?.history ?? [])] },
       settled: p.settled ?? [],
       name: p.name ?? base.name,
+      shelter: p.shelter ? { ...base.shelter, ...p.shelter } : base.shelter,
     });
   } catch {
     return withUrlFlags(base);

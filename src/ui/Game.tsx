@@ -34,9 +34,11 @@ export interface GameProps {
   onHelp: () => void;
   /** Modo carrera de sala: sin premio individual; avisa al ganar. */
   race?: { onWin: () => void; step: number };
+  /** Partida sin DINO (práctica o desafío comunitario): no hay premio por nivel. */
+  free?: { label: string; sub: string; onWin?: (usedSec: number, failed: number) => void };
 }
 
-export function Game({ level, ledger, completedBefore, dev, reducedMotion, hasNext, onComplete, onExit, onNext, onRetry, onHelp, race }: GameProps) {
+export function Game({ level, ledger, completedBefore, dev, reducedMotion, hasNext, onComplete, onExit, onNext, onRetry, onHelp, race, free }: GameProps) {
   const [session] = useState(() => new GameSession(level, { claimed: completedBefore, reducedMotion }));
   const snap = useSyncExternalStore(session.subscribe, session.getSnapshot);
   const n = level.size;
@@ -105,6 +107,13 @@ export function Game({ level, ledger, completedBefore, dev, reducedMotion, hasNe
         race.onWin();
         return;
       }
+      if (free) {
+        const none: CompletionResult = { ledger: ledgerRef.current, awarded: 0, alreadyClaimed: true };
+        setReward(none);
+        onComplete(level.id, r.usedSec, none);
+        free.onWin?.(r.usedSec, r.failedAttempts);
+        return;
+      }
       const out = applyCompletion(ledgerRef.current, {
         levelId: level.id,
         remainingSec: r.remainingSec,
@@ -115,7 +124,7 @@ export function Game({ level, ledger, completedBefore, dev, reducedMotion, hasNe
       setReward(out);
       onComplete(level.id, r.usedSec, out);
     }
-  }, [snap.phase, snap.result, level, onComplete, race]);
+  }, [snap.phase, snap.result, level, onComplete, race, free]);
 
   const now = () => performance.now();
 
@@ -218,7 +227,12 @@ export function Game({ level, ledger, completedBefore, dev, reducedMotion, hasNe
           <span className="hud-label">Tiempo</span>
           <span className="hud-value" role="timer">{fmtTime(snap.remainingSec)}</span>
         </div>
-        {!race && <div className="hud-chip reward" title="Premio de prueba si completas ahora">
+        {!race && free && <div className="hud-chip reward" title="Esta partida no gana ni pierde DINO">
+          <span className="hud-label">{free.label}</span>
+          <span className="hud-value">0 DINO</span>
+          <span className="hud-sub">{free.sub}</span>
+        </div>}
+        {!race && !free && <div className="hud-chip reward" title="Premio de prueba si completas ahora">
           <span className="hud-label">Recompensa potencial</span>
           <span className="hud-value">{claimed ? 'Práctica' : `${potential.toFixed(1)} DINO`}</span>
           <span className="hud-sub">{claimed ? 'ya cobrado · sin premio' : 'DINO de prueba'}</span>
@@ -414,7 +428,7 @@ export function Game({ level, ledger, completedBefore, dev, reducedMotion, hasNe
                   <div><dt>Intentos fallidos</dt><dd>{snap.result.failedAttempts}</dd></div>
                   {!race && <div>
                     <dt>Recompensa de prueba</dt>
-                    <dd>{reward ? (reward.alreadyClaimed ? '0 · ya cobrado' : `+${reward.awarded.toFixed(1)} DINO`) : '…'}</dd>
+                    <dd>{free ? '0 · partida gratis' : reward ? (reward.alreadyClaimed ? '0 · ya cobrado' : `+${reward.awarded.toFixed(1)} DINO`) : '…'}</dd>
                   </div>}
                 </dl>
                 <p className="muted">DINO de prueba: valores simulados, sin valor real.</p>
